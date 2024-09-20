@@ -5,16 +5,18 @@ import "./interfaces/IERC721.sol";
 import "./Utils.sol";
 
 // Uncomment this line to use console.log
-// import "hardhat/console.sol";
+// NFT Marketplace like OpenSea
 
 contract MemeTopia {
     address public nftAddress;
 
     uint256 public listingCount;
 
+    uint256 private _Fee = 0.01 ether;
+
     struct NftListing {
         uint256 id;
-        uint256 amount;
+        uint256 price;
         address lister;
         bool isCompleted;
         bool isDelisted;
@@ -42,9 +44,18 @@ contract MemeTopia {
         }
     }
 
-    function checkIfOwner(uint256 _tokenId) private view returns (bool) {
-        sanityCheck(msg.sender);
-        return IERC721(nftAddress).ownerOf(_tokenId) == msg.sender;
+    function onlyOwner(uint256 _tokenId) private view {
+        if (!checkIfOwner(_tokenId, msg.sender)) {
+            revert Errors.OnlyOwner();
+        }
+    }
+
+    function checkIfOwner(
+        uint256 _tokenId,
+        address _owner
+    ) private view returns (bool) {
+        sanityCheck(_owner);
+        return IERC721(nftAddress).ownerOf(_tokenId) == _owner;
     }
 
     function checkIfOwnerHasListedNFT(
@@ -55,17 +66,29 @@ contract MemeTopia {
     }
 
     // @dev: User main functions
-    function transferOwnership(uint256 _tokenId) external {
+    function transferOwnership(uint256 _tokenId, address _to) external {
         // check if Nft is in an existing listing
+        if (checkIfOwnerHasListedNFT(_tokenId)) {
+            revert Errors.CannotTransferAListedNFT();
+        }
+
+        // only owner of NFT can  transferOwnership
+        onlyOwner(_tokenId);
+
+        IERC721(nftAddress).transferFrom(msg.sender, _to, _tokenId);
+
+        emit Events.NftOwnershipTransferedSuccessfully(
+            msg.sender,
+            _to,
+            _tokenId
+        );
     }
 
-    function listNft(uint256 _tokenId, uint256 _amount) external {
+    function listNft(uint256 _tokenId, uint256 _amount) external payable {
         sanityCheck(msg.sender);
 
         // only owner of NFT can  list it
-        if (!checkIfOwner(_tokenId)) {
-            revert Errors.NftNotFound();
-        }
+        onlyOwner(_tokenId);
 
         // to prevent an owner from listing NFT 2ce
         if (checkIfOwnerHasListedNFT(_tokenId)) {
@@ -73,6 +96,10 @@ contract MemeTopia {
         }
 
         zeroValueCheck(_amount);
+
+        if (msg.value < _Fee) {
+            revert Errors.FeePaymentIsRequired();
+        }
 
         IERC721(nftAddress).transferFrom(msg.sender, address(this), _tokenId);
 
@@ -94,13 +121,72 @@ contract MemeTopia {
         emit Events.NftListedSuccessfully(msg.sender, _amount, _tokenId);
     }
 
-    function mint() external{
+    function mint() external {
+        sanityCheck(msg.sender);
+        IERC721(nftAddress).mint(msg.sender);
 
+        emit Events.MintedNftSuccessfully(msg.sender);
     }
-    
-    function delistNft(uint256 _tokenId) external {}
+
+    function delistNft(uint256 _tokenId) external {
+        sanityCheck(msg.sender);
+
+        if (!checkIfOwnerHasListedNFT(_tokenId)) {
+            revert Errors.NftHasNotBeenListed();
+        }
+
+        NftListing memory nftListing = tokenIdToNftListing[_tokenId];
+
+        if (!(nftListing.lister == msg.sender)) {
+            revert Errors.OnlyOwner();
+        }
+
+        if (nftListing.isCompleted) {
+            revert Errors.NftHasBeenBoughtAlready();
+        }
+        if (nftListing.isDelisted) {
+            revert Errors.NftIsNolongerAvailable();
+        }
+
+        tokenIdToNftListing[_tokenId].isDelisted = true;
+
+        IERC721(nftAddress).transferFrom(address(this), msg.sender, _tokenId);
+    }
 
     function buyNft(uint256 _tokenId) external payable {
         sanityCheck(msg.sender);
+
+        // if owner has not listed NFT
+        if (!checkIfOwnerHasListedNFT(_tokenId)) {
+            revert Errors.NftHasNotBeenListed();
+        }
+
+        NftListing memory nftListing = tokenIdToNftListing[_tokenId];
+
+        if (nftListing.isCompleted) {
+            revert Errors.NftHasBeenBoughtAlready();
+        }
+        if (nftListing.isDelisted) {
+            revert Errors.NftIsNolongerAvailable();
+        }
+
+        if (msg.value < (_Fee + nftListing.price)) {
+            revert Errors.InsufficientAmount();
+        }
+
+        tokenIdToNftListing[_tokenId].isCompleted = true;
+
+        IERC721(nftAddress).transferFrom(address(this), msg.sender, _tokenId);
+
+        emit Events.NftSoldSuccessfully(
+            nftListing.lister,
+            msg.sender,
+            msg.value,
+            _tokenId
+        );
+    }
+
+    function getFee() external view returns (uint256) {
+        return _Fee;
     }
 }

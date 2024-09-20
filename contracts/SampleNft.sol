@@ -17,7 +17,7 @@ contract CorpPepe is ERC721, ERC721URIStorage, Ownable {
     }
 
     function mint(address to)
-        public
+        external
     {
         uint256 _id = _tokenId + 1;
         _safeMint(to, _id);
