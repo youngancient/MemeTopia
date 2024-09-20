@@ -5,18 +5,24 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+
 contract CorpPepe is ERC721, ERC721URIStorage, Ownable {
-    string constant _uri = "";
-    constructor()
+    string _uri;
+    uint256 _tokenId;
+    constructor(string memory _tokenUri)
         ERC721("CorpPepe", "MRPEPE")
         Ownable(msg.sender)
-    {}
+    {
+        _uri = _tokenUri;
+    }
 
-    function mint(address to, uint256 tokenId, string memory uri)
+    function mint(address to)
         public
     {
-        _safeMint(to, tokenId);
-        _setTokenURI(tokenId, uri);
+        uint256 _id = _tokenId + 1;
+        _safeMint(to, _id);
+        _setTokenURI(_id, _uri);
+        _tokenId ++;
     }
 
     // The following functions are overrides required by Solidity.
