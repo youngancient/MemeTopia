@@ -94,9 +94,13 @@ contract MemeTopia {
         emit Events.NftListedSuccessfully(msg.sender, _amount, _tokenId);
     }
 
+    function mint() external{
+
+    }
+    
     function delistNft(uint256 _tokenId) external {}
 
     function buyNft(uint256 _tokenId) external payable {
-        
+        sanityCheck(msg.sender);
     }
 }
