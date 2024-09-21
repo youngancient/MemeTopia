@@ -12,6 +12,8 @@ library Errors {
     error FeePaymentIsRequired();
     error InsufficientAmount();
     error CannotTransferAListedNFT();
+    error TransferFailed();
+    error OwnerCannotBuySelfListedNft();
 }
 
 library Events {
@@ -20,6 +22,12 @@ library Events {
         uint256 indexed _amount,
         uint256 indexed _tokenId
     );
+    event NftDelistedSuccessfully(
+        address indexed _lister,
+        uint256 indexed _amount,
+        uint256 indexed _tokenId
+    );
+
     event MintedNftSuccessfully(address indexed _to);
 
     event NftSoldSuccessfully(
