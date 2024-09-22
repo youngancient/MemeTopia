@@ -129,7 +129,7 @@ describe("MemeTopia NftMarketplace", function () {
         memeTopia.connect(account1).listNft(validTokenId, price, corpPepe)
       ).to.be.revertedWithCustomError(memeTopia, "ZeroValueNotAllowed");
     });
-    it("Should revert if payment is not made", async function () {
+    it("Should revert if payment is insufficient", async function () {
       const {
         owner,
         account1,
@@ -202,10 +202,7 @@ describe("MemeTopia NftMarketplace", function () {
           .listNft(validTokenId, price, corpPepe, { value: fee + price })
       ).to.be.revertedWithCustomError(memeTopia, "CannotListTwice");
     });
-  });
-
-  describe("Buy NFT", function () {
-    it("Should list NFT successfully", async function () {
+    it("Should allow a user list an NFT he newly bought on the marketplace", async function () {
       const {
         owner,
         account1,
@@ -221,15 +218,226 @@ describe("MemeTopia NftMarketplace", function () {
 
       await corpPepe.connect(account1).approve(memeTopia, validTokenId);
 
+      // list NFT
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee });
+
+      // get nftListing
+
+      const nftListing = await memeTopia.getNFTListing(validTokenId, corpPepe);
+
+      // buy NFT
       await expect(
         memeTopia
-          .connect(account1)
-          .listNft(validTokenId, price, corpPepe, { value: fee + price })
+          .connect(account3)
+          .buyNft(validTokenId, corpPepe, { value: nftListing.price + fee })
       )
-        .to.emit(memeTopia, "NftListedSuccessfully")
+        .to.emit(memeTopia, "NftBoughtSuccessfully")
+        .withArgs(nftListing.lister, account3, nftListing.price, validTokenId);
+
+      expect(await corpPepe.ownerOf(validTokenId)).to.equal(account3);
+
+      // account3 is the new owner, he tries to list with a different price
+      let price2 = ethers.parseEther("50");
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price2, corpPepe, { value: fee });
+
+    });
+  });
+
+  describe("Buy NFT", function () {
+    it("Should revert if user tries to buy an NFT with an invalid tokenId", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      // list NFT
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee + price });
+
+      let invalidTokenId = 10;
+
+      await expect(
+        memeTopia.connect(account3).buyNft(invalidTokenId, corpPepe)
+      ).to.be.revertedWithCustomError(memeTopia, "NftHasNotBeenListed");
+    });
+    it("Should revert if NFT has been delisted", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      // list
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee + price });
+
+      //  delist
+
+      await expect(
+        memeTopia.connect(account1).delistNft(validTokenId, corpPepe)
+      )
+        .to.emit(memeTopia, "NftDelistedSuccessfully")
         .withArgs(account1, price, validTokenId);
 
-      expect(await memeTopia.listingCount()).to.equal(1);
+      // buy NFT
+      await expect(
+        memeTopia.connect(account3).buyNft(validTokenId, corpPepe)
+      ).to.be.revertedWithCustomError(memeTopia, "NftIsNolongerAvailable");
+    });
+    it("Should revert if owner who listed NFT tries to buy the NFT", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      // list NFT
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee });
+
+      await expect(
+        memeTopia.connect(account1).buyNft(validTokenId, corpPepe)
+      ).to.be.revertedWithCustomError(memeTopia, "OwnerCannotBuySelfListedNft");
+    });
+    it("Should revert if payment is insufficient", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      // list NFT
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee });
+
+      await expect(
+        memeTopia.connect(account3).buyNft(validTokenId, corpPepe)
+      ).to.be.revertedWithCustomError(memeTopia, "InsufficientAmount");
+    });
+    it("Should buy successfully", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      // list NFT
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee });
+
+      // get nftListing
+
+      const nftListing = await memeTopia.getNFTListing(validTokenId, corpPepe);
+
+      // buy NFT
+      await expect(
+        memeTopia
+          .connect(account3)
+          .buyNft(validTokenId, corpPepe, { value: nftListing.price + fee })
+      )
+        .to.emit(memeTopia, "NftBoughtSuccessfully")
+        .withArgs(nftListing.lister, account3, nftListing.price, validTokenId);
+
+      expect(await corpPepe.ownerOf(validTokenId)).to.equal(account3);
+
+      expect(await memeTopia.getContractBalance()).to.equal(fee * BigInt(2));
+    });
+  
+    it("Should revert if buyer tries to buy twice", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      // list NFT
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee });
+
+      // get nftListing
+
+      const nftListing = await memeTopia.getNFTListing(validTokenId, corpPepe);
+
+      // buy NFT
+      await expect(
+        memeTopia
+          .connect(account3)
+          .buyNft(validTokenId, corpPepe, { value: nftListing.price + fee })
+      )
+        .to.emit(memeTopia, "NftBoughtSuccessfully")
+        .withArgs(nftListing.lister, account3, nftListing.price, validTokenId);
+
+      // buy same NFT again
+      await expect(
+        memeTopia
+          .connect(account3)
+          .buyNft(validTokenId, corpPepe, { value: nftListing.price + fee })
+      ).to.be.revertedWithCustomError(memeTopia, "NftHasBeenBoughtAlready");
     });
   });
 
@@ -352,5 +560,356 @@ describe("MemeTopia NftMarketplace", function () {
       ).to.be.revertedWithCustomError(memeTopia, "NftIsNolongerAvailable");
     });
     // should revert if owner tries to delist an already bought NFT
+    it("Should revert if owner tries to delist an already bought NFT", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      // list NFT
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee });
+
+      // get nftListing
+
+      const nftListing = await memeTopia.getNFTListing(validTokenId, corpPepe);
+
+      // buy NFT
+      await expect(
+        memeTopia
+          .connect(account3)
+          .buyNft(validTokenId, corpPepe, { value: nftListing.price + fee })
+      )
+        .to.emit(memeTopia, "NftBoughtSuccessfully")
+        .withArgs(nftListing.lister, account3, nftListing.price, validTokenId);
+
+      // delist same NFT by previous owner
+      await expect(
+        memeTopia.connect(account1).delistNft(validTokenId, corpPepe)
+      ).to.be.revertedWithCustomError(memeTopia, "NftHasBeenBoughtAlready");
+    });
+  });
+
+  describe("Activate Delisted NFT Listing", function () {
+    it("Should revert if NFT has been bought", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      // list NFT
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee });
+
+      // get nftListing
+
+      const nftListing = await memeTopia.getNFTListing(validTokenId, corpPepe);
+
+      // buy NFT
+      await expect(
+        memeTopia
+          .connect(account3)
+          .buyNft(validTokenId, corpPepe, { value: nftListing.price + fee })
+      )
+        .to.emit(memeTopia, "NftBoughtSuccessfully")
+        .withArgs(nftListing.lister, account3, nftListing.price, validTokenId);
+
+      // activate
+      await expect(
+        memeTopia
+          .connect(account1)
+          .activateDelistedNftListing(validTokenId, corpPepe, { value: fee })
+      ).to.be.revertedWithCustomError(memeTopia, "NftHasBeenBoughtAlready");
+    });
+
+    it("Should allow owner list a delisted listing successfully", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      // list
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee + price });
+
+      //  delist
+
+      await expect(
+        memeTopia.connect(account1).delistNft(validTokenId, corpPepe)
+      )
+        .to.emit(memeTopia, "NftDelistedSuccessfully")
+        .withArgs(account1, price, validTokenId);
+
+      // list again
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      await expect(
+        memeTopia
+          .connect(account1)
+          .activateDelistedNftListing(validTokenId, corpPepe, { value: fee })
+      )
+        .to.emit(memeTopia, "NftListingActivated")
+        .withArgs(account1, validTokenId, corpPepe);
+
+      expect((await memeTopia.getNFTListing(validTokenId, corpPepe)).isDelisted)
+        .to.be.false;
+    });
+    it("Should revert if NFT listing is still active", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      // list NFT
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee });
+
+      // get nftListing
+
+      const nftListing = await memeTopia.getNFTListing(validTokenId, corpPepe);
+
+      // activate
+      await expect(
+        memeTopia
+          .connect(account1)
+          .activateDelistedNftListing(validTokenId, corpPepe, { value: fee })
+      ).to.be.revertedWithCustomError(memeTopia, "NftListingIsStillActive");
+
+    });
+    it("Should revert if called my nonOwner of NFT listing", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      // list NFT
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee });
+
+      // get nftListing
+
+      const nftListing = await memeTopia.getNFTListing(validTokenId, corpPepe);
+
+      // activate
+      await expect(
+        memeTopia
+          .connect(account2)
+          .activateDelistedNftListing(validTokenId, corpPepe, { value: fee })
+      ).to.be.revertedWithCustomError(memeTopia, "OnlyOwner");
+
+    });
+  });
+
+  describe("Transfer NFT ownership", function () {
+    it("Should revert if owner tries to transfer ownership of a listed NFT", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      await expect(
+        memeTopia
+          .connect(account1)
+          .listNft(validTokenId, price, corpPepe, { value: fee + price })
+      )
+        .to.emit(memeTopia, "NftListedSuccessfully")
+        .withArgs(account1, price, validTokenId);
+
+      await expect(
+        memeTopia
+          .connect(account1)
+          .transferOwnership(validTokenId, account3, corpPepe)
+      ).to.be.revertedWithCustomError(memeTopia, "CannotTransferAListedNFT");
+    });
+    it("Should revert if a user tries to transfer ownership of an NFT he does not own", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await expect(
+        memeTopia.transferOwnership(validTokenId, account3, corpPepe)
+      ).to.be.revertedWithCustomError(memeTopia, "OnlyOwner");
+    });
+    it("Should transfer ownership successfully", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+
+      let validTokenId = 1;
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      await expect(
+        memeTopia
+          .connect(account1)
+          .transferOwnership(validTokenId, account3, corpPepe)
+      )
+        .to.emit(memeTopia, "NftOwnershipTransferedSuccessfully")
+        .withArgs(account1, account3, validTokenId);
+
+      expect(await corpPepe.ownerOf(validTokenId)).to.equal(account3);
+    });
+  });
+
+  describe("Owner withdraw Balance", function () {
+    it("Should revert if caller is not owner", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      // list NFT
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee + price });
+
+      // get nftListing
+
+      const nftListing = await memeTopia.getNFTListing(validTokenId, corpPepe);
+
+      // buy NFT
+      await memeTopia
+        .connect(account3)
+        .buyNft(validTokenId, corpPepe, { value: nftListing.price + fee });
+
+      await expect(
+        memeTopia.connect(account1).withdrawBalance()
+      ).to.be.revertedWithCustomError(memeTopia, "OnlyOwner");
+    });
+    it("Should withdraw contract balance to owner successfully", async function () {
+      const {
+        owner,
+        account1,
+        account3,
+        memeTopia,
+        corpPepe,
+        clownPepe,
+        account2,
+      } = await loadFixture(deployMemeTopia);
+      let validTokenId = 1;
+      let price = ethers.parseEther("50");
+      let fee = await memeTopia.getFee();
+
+      await corpPepe.connect(account1).approve(memeTopia, validTokenId);
+
+      // list NFT
+      await memeTopia
+        .connect(account1)
+        .listNft(validTokenId, price, corpPepe, { value: fee });
+
+      // get nftListing
+
+      const nftListing = await memeTopia.getNFTListing(validTokenId, corpPepe);
+
+      // buy NFT
+      await memeTopia
+        .connect(account3)
+        .buyNft(validTokenId, corpPepe, { value: nftListing.price + fee });
+
+      let contractBal = await await memeTopia.getContractBalance();
+
+      let ownerBalBefore = await ethers.provider.getBalance(owner);
+
+      await expect(memeTopia.withdrawBalance())
+        .to.emit(memeTopia, "WithdrawalSuccessful")
+        .withArgs(owner, contractBal);
+
+      let ownerBalAfter = await ethers.provider.getBalance(owner);
+
+      expect(ownerBalAfter).to.greaterThan(ownerBalBefore);
+    });
   });
 });
+
+// continuity problem: a buyer listing an NFT he bought
+// a seller listing an NFT he previously delisted

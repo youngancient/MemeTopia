@@ -14,6 +14,7 @@ library Errors {
     error CannotTransferAListedNFT();
     error TransferFailed();
     error OwnerCannotBuySelfListedNft();
+    error NftListingIsStillActive();
 }
 
 library Events {
@@ -30,7 +31,7 @@ library Events {
 
     event MintedNftSuccessfully(address indexed _to);
 
-    event NftSoldSuccessfully(
+    event NftBoughtSuccessfully(
         address indexed _lister,
         address indexed _buyer,
         uint256 _price,
@@ -41,5 +42,24 @@ library Events {
         address indexed _from,
         address indexed _to,
         uint256 indexed _tokenId
+    );
+
+    event WithdrawalSuccessful(
+        address indexed _to,
+        uint256 indexed _amount
+    );
+
+    event NftListingActivated(
+        address indexed _owner,
+        uint256 indexed _tokenId,
+        address indexed _nftAddress
+    );
+
+    event NftListingPriceUpdated(
+        address indexed _owner,
+        uint256 indexed _tokenId,
+        address indexed _nftAddress,
+        uint256 _former,
+        uint256 _new
     );
 }
